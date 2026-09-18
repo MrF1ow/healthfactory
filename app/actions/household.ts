@@ -1,8 +1,8 @@
 "use server"
 
 import { redirect } from "next/navigation"
-import { householdConfigToColumns } from "@/lib/household/config"
 import { parseHouseholdConfig } from "@/lib/household/parse"
+import { createHouseholdWrites } from "@/lib/household/writes"
 import { publicSupabaseEnv } from "@/lib/env"
 import { createClient } from "@/lib/supabase/server"
 
@@ -33,7 +33,7 @@ export async function updateHousehold(
 
   const { data: personRow, error: personError } = await supabase
     .from("people")
-    .select("household_id")
+    .select("id, household_id")
     .eq("auth_user_id", sessionUserId)
     .maybeSingle()
 
@@ -44,29 +44,18 @@ export async function updateHousehold(
     return { error: "You must be a household member to update settings." }
   }
 
+  const personId = (personRow as { id: unknown }).id
   const householdId = (personRow as { household_id: unknown }).household_id
-  if (typeof householdId !== "string") {
+  if (typeof personId !== "string" || typeof householdId !== "string") {
     return { error: "Could not load household settings." }
   }
 
-  const columns = householdConfigToColumns(parsed.value)
-  const { data: updated, error } = await supabase
-    .from("households")
-    .update({
-      name: columns.name,
-      fridge_locations: columns.fridge_locations,
-      recipe_search_places: columns.recipe_search_places,
-      household_preferences: columns.household_preferences,
-    })
-    .eq("id", householdId)
-    .select("id")
-    .maybeSingle()
-
-  if (error) {
-    return { error: error.message }
-  }
-  if (!updated) {
-    return { error: "Could not update household settings." }
+  const written = await createHouseholdWrites(supabase, householdId, {
+    kind: "session",
+    personId,
+  }).replaceConfig(parsed.value)
+  if (!written.ok) {
+    return { error: written.error }
   }
 
   redirect("/settings")

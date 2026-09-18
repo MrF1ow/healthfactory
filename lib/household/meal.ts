@@ -33,6 +33,12 @@ export type MealLogRow = {
   payload: unknown
 }
 
+export type MealColumns = {
+  person_id: string
+  source: MealSource
+  payload: MealPayload
+}
+
 export type HumanMealColumns = {
   person_id: string
   source: "human"
@@ -55,7 +61,7 @@ function asFiniteNumber(value: unknown): number | null | undefined {
   return undefined
 }
 
-function mealPayloadFromUnknown(value: unknown): ParseResult<MealPayload> {
+export function mealPayloadFromUnknown(value: unknown): ParseResult<MealPayload> {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     return { ok: false, error: "Enter what you ate." }
   }
@@ -137,6 +143,18 @@ export function mealLogFromRow(row: MealLogRow): ParseResult<MealLogEntry> {
       source: row.source,
       payload: payload.value,
     },
+  }
+}
+
+export function mealToColumns(
+  personId: string,
+  source: MealSource,
+  payload: MealPayload,
+): MealColumns {
+  return {
+    person_id: personId,
+    source,
+    payload,
   }
 }
 

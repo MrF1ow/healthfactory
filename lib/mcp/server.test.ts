@@ -1,6 +1,9 @@
 import { afterEach, describe, expect, it } from "vitest"
 import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client"
 import type { HouseholdReads } from "@/lib/household/reads"
+import type { HouseholdWrites } from "@/lib/household/writes"
+import { mealPayloadFromUnknown } from "@/lib/household/meal"
+import { parseMacroTargetsFromUnknown } from "@/lib/household/profile"
 import {
   createHouseholdMcpHandler,
   handleMcpRequest,
@@ -94,6 +97,71 @@ const reads: HouseholdReads = {
   },
 }
 
+const writes: HouseholdWrites = {
+  async replaceConfig(config) {
+    return { ok: true, value: config }
+  },
+  async replaceProfile(personId) {
+    return { ok: true, value: { personId } }
+  },
+  async updateMacroTargets(personId, input) {
+    if (personId !== "person-alice") {
+      return { ok: false, error: "Not found." }
+    }
+    return parseMacroTargetsFromUnknown(input)
+  },
+  async updatePreferences(personId, patch) {
+    if (personId !== "person-alice") {
+      return { ok: false, error: "Not found." }
+    }
+    if (!patch || typeof patch !== "object") {
+      return { ok: false, error: "Preferences must be an object." }
+    }
+    return {
+      ok: true,
+      value: {
+        ...aliceProfile.preferences,
+        ...(patch as { dislikes?: string[] }),
+      },
+    }
+  },
+  async logMeal(personId, entry) {
+    if (personId !== "person-alice") {
+      return { ok: false, error: "Not found." }
+    }
+    const payload = mealPayloadFromUnknown(entry)
+    if (!payload.ok) {
+      return payload
+    }
+    return {
+      ok: true,
+      value: {
+        id: "meal-new",
+        personId,
+        loggedAt: "2026-09-18T15:00:00.000Z",
+        source: "bot",
+        payload: payload.value,
+      },
+    }
+  },
+  async updateHouseholdConfig(patch) {
+    if (!patch || typeof patch !== "object") {
+      return { ok: false, error: "Household config must be an object." }
+    }
+    return {
+      ok: true,
+      value: { ...householdConfig, ...(patch as { name?: string }) },
+    }
+  },
+  async updateFridgeLocations(input) {
+    const locations = (input as { locations?: unknown }).locations
+    if (!Array.isArray(locations)) {
+      return { ok: false, error: "Fridge locations must be a list of names." }
+    }
+    return { ok: true, value: locations as string[] }
+  },
+}
+
 const householdAuth = {
   token: "hf_mcp_test",
   clientId: "house-a",
@@ -123,7 +191,7 @@ describe("household MCP server", () => {
   })
 
   async function connect() {
-    handler = createHouseholdMcpHandler(() => reads)
+    handler = createHouseholdMcpHandler(() => ({ reads, writes }))
     const transport = new StreamableHTTPClientTransport(new URL("http://test.local/mcp"), {
       fetch: (url, init) =>
         handler!.fetch(new Request(url, init), { authInfo: householdAuth }),
@@ -156,19 +224,99 @@ describe("household MCP server", () => {
     ).toEqual({ entries: [salad], truncated: false })
   })
 
-  it("returns not found for a person outside the household and registers no tools", async () => {
+  it("returns not found for a person outside the household", async () => {
     const mcp = await connect()
     await expect(
       mcp.readResource({ uri: "person://person-bob/profile" }),
     ).rejects.toMatchObject({
       message: "Resource not found: person://person-bob/profile",
     })
-    expect((await mcp.listTools()).tools).toEqual([])
+  })
+
+  it("registers the five write tools and logs meals as bot", async () => {
+    const mcp = await connect()
+    expect((await mcp.listTools()).tools.map((tool) => tool.name).sort()).toEqual([
+      "log_meal",
+      "update_fridge_locations",
+      "update_household_config",
+      "update_macro_targets",
+      "update_preferences",
+    ])
+    const meal = await mcp.callTool({
+      name: "log_meal",
+      arguments: {
+        person_id: "person-alice",
+        entry: { description: "Oatmeal" },
+      },
+    })
+    expect(meal.isError).toBeUndefined()
+    expect(meal.structuredContent).toEqual({
+      id: "meal-new",
+      personId: "person-alice",
+      loggedAt: "2026-09-18T15:00:00.000Z",
+      source: "bot",
+      payload: {
+        schemaVersion: 1,
+        kind: "meal",
+        description: "Oatmeal",
+        nutrition: null,
+      },
+    })
+    const macros = await mcp.callTool({
+      name: "update_macro_targets",
+      arguments: {
+        person_id: "person-alice",
+        targets: { calories: 2000, proteinG: 140, carbsG: 200, fatG: 60 },
+      },
+    })
+    expect(macros.structuredContent).toEqual({
+      method: "manual",
+      amounts: { calories: 2000, proteinG: 140, carbsG: 200, fatG: 60 },
+    })
+    const missing = await mcp.callTool({
+      name: "update_macro_targets",
+      arguments: {
+        person_id: "person-bob",
+        targets: { calories: 2000, proteinG: 140, carbsG: 200, fatG: 60 },
+      },
+    })
+    expect(missing.isError).toBe(true)
+    expect(missing.content).toEqual([{ type: "text", text: "Not found." }])
+    const prefs = await mcp.callTool({
+      name: "update_preferences",
+      arguments: {
+        person_id: "person-alice",
+        patch: { dislikes: ["cilantro"] },
+      },
+    })
+    expect(prefs.structuredContent).toEqual({
+      ...aliceProfile.preferences,
+      dislikes: ["cilantro"],
+    })
+    const household = await mcp.callTool({
+      name: "update_household_config",
+      arguments: { patch: { name: "Flow House" } },
+    })
+    expect(household.structuredContent).toEqual({
+      ...householdConfig,
+      name: "Flow House",
+    })
+    const fridge = await mcp.callTool({
+      name: "update_fridge_locations",
+      arguments: { locations: ["kitchen fridge", "garage freezer"] },
+    })
+    expect(fridge.structuredContent).toEqual(["kitchen fridge", "garage freezer"])
+    const blankMeal = await mcp.callTool({
+      name: "log_meal",
+      arguments: { person_id: "person-alice", entry: { description: "  " } },
+    })
+    expect(blankMeal.isError).toBe(true)
+    expect(blankMeal.content).toEqual([{ type: "text", text: "Enter what you ate." }])
   })
 
   it("rejects requests without a Bearer token", async () => {
     const response = await handleMcpRequest(
-      createHouseholdMcpHandler(() => reads),
+      createHouseholdMcpHandler(() => ({ reads, writes })),
       new Request("http://test.local/mcp", { method: "POST" }),
       async () => "house-a",
     )
@@ -178,7 +326,7 @@ describe("household MCP server", () => {
 
   it("rejects a Bearer token that does not resolve to a household", async () => {
     const response = await handleMcpRequest(
-      createHouseholdMcpHandler(() => reads),
+      createHouseholdMcpHandler(() => ({ reads, writes })),
       new Request("http://test.local/mcp", {
         method: "POST",
         headers: { Authorization: "Bearer hf_mcp_unknown" },

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { humanMealToColumns, mealLogFromRow } from "./meal"
+import { humanMealToColumns, mealLogFromRow, mealToColumns } from "./meal"
 
 describe("mealLogFromRow", () => {
   it("parses a human meal with a description only", () => {
@@ -70,6 +70,28 @@ describe("humanMealToColumns", () => {
         kind: "meal",
         description: "Chicken and rice",
         nutrition: { calories: 700, proteinG: 50, carbsG: 60, fatG: 20 },
+      },
+    })
+  })
+})
+
+describe("mealToColumns", () => {
+  it("binds bot source when the caller asks for a bot meal", () => {
+    expect(
+      mealToColumns("person-alice", "bot", {
+        schemaVersion: 1,
+        kind: "meal",
+        description: "Oatmeal",
+        nutrition: null,
+      }),
+    ).toEqual({
+      person_id: "person-alice",
+      source: "bot",
+      payload: {
+        schemaVersion: 1,
+        kind: "meal",
+        description: "Oatmeal",
+        nutrition: null,
       },
     })
   })

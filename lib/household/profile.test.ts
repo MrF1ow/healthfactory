@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest"
-import { personProfileFromRow, personProfileToColumns } from "./profile"
+import {
+  parseMacroTargetsFromUnknown,
+  parsePreferencesPatch,
+  mergePreferences,
+  personProfileFromRow,
+  personProfileToColumns,
+} from "./profile"
 
 const emptyPreferences = {
   schemaVersion: 1 as const,
@@ -199,6 +205,72 @@ describe("personProfileToColumns", () => {
         checkInCadence: "weekly",
         guidance: null,
       },
+    })
+  })
+})
+
+describe("parseMacroTargetsFromUnknown", () => {
+  it("parses a complete manual set from JSON numbers", () => {
+    expect(
+      parseMacroTargetsFromUnknown({
+        calories: 2000,
+        proteinG: 140,
+        carbsG: 200,
+        fatG: 60,
+      }),
+    ).toEqual({
+      ok: true,
+      value: {
+        method: "manual",
+        amounts: { calories: 2000, proteinG: 140, carbsG: 200, fatG: 60 },
+      },
+    })
+  })
+
+  it("rejects a partial set with the form error", () => {
+    expect(parseMacroTargetsFromUnknown({ calories: 2000 })).toEqual({
+      ok: false,
+      error: "Enter calories, protein, carbs, and fat together.",
+    })
+  })
+
+  it("rejects negative macros", () => {
+    expect(
+      parseMacroTargetsFromUnknown({
+        calories: -1,
+        proteinG: 1,
+        carbsG: 1,
+        fatG: 1,
+      }),
+    ).toEqual({ ok: false, error: "Macro targets cannot be negative." })
+  })
+})
+
+describe("parsePreferencesPatch", () => {
+  it("merges one list onto the current preferences", () => {
+    expect(parsePreferencesPatch({ dislikes: ["cilantro"] })).toEqual({
+      ok: true,
+      value: { dislikes: ["cilantro"] },
+    })
+    expect(
+      mergePreferences(
+        {
+          schemaVersion: 1,
+          dietaryRestrictions: ["no pork"],
+          allergies: [],
+          likes: ["rice"],
+          dislikes: [],
+          notes: "weeknight cooking",
+        },
+        { dislikes: ["cilantro"] },
+      ),
+    ).toEqual({
+      schemaVersion: 1,
+      dietaryRestrictions: ["no pork"],
+      allergies: [],
+      likes: ["rice"],
+      dislikes: ["cilantro"],
+      notes: "weeknight cooking",
     })
   })
 })

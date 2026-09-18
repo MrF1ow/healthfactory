@@ -233,7 +233,187 @@ function asFiniteNumber(value: unknown): number | null | undefined {
   return undefined
 }
 
-function preferencesFromUnknown(value: unknown): ParseResult<PersonPreferences> {
+export function parseNonNegativeUnknown(
+  value: unknown,
+  label: string,
+): ParseResult<number | null> {
+  if (value === undefined || value === null || value === "") {
+    return { ok: true, value: null }
+  }
+  const parsed = asFiniteNumber(value)
+  if (parsed === undefined) {
+    return { ok: false, error: `Enter a valid ${label}.` }
+  }
+  if (parsed === null) {
+    return { ok: true, value: null }
+  }
+  if (parsed < 0) {
+    return { ok: false, error: "Macro targets cannot be negative." }
+  }
+  return { ok: true, value: parsed }
+}
+
+export function parseMacroTargetsFromUnknown(
+  value: unknown,
+): ParseResult<MacroTargets | null> {
+  if (value === null) {
+    return { ok: true, value: null }
+  }
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return { ok: false, error: "Enter calories, protein, carbs, and fat together." }
+  }
+  const record = value as {
+    calories?: unknown
+    proteinG?: unknown
+    carbsG?: unknown
+    fatG?: unknown
+    method?: unknown
+  }
+  const calories = parseNonNegativeUnknown(record.calories, "calories")
+  if (!calories.ok) {
+    return calories
+  }
+  const proteinG = parseNonNegativeUnknown(record.proteinG, "protein")
+  if (!proteinG.ok) {
+    return proteinG
+  }
+  const carbsG = parseNonNegativeUnknown(record.carbsG, "carbs")
+  if (!carbsG.ok) {
+    return carbsG
+  }
+  const fatG = parseNonNegativeUnknown(record.fatG, "fat")
+  if (!fatG.ok) {
+    return fatG
+  }
+  const amounts = parseMacroAmountsFromOptionals(
+    calories.value,
+    proteinG.value,
+    carbsG.value,
+    fatG.value,
+  )
+  if (!amounts.ok) {
+    return amounts
+  }
+  if (!amounts.value) {
+    if (record.method !== undefined && record.method !== null) {
+      return { ok: false, error: "Enter calories, protein, carbs, and fat together." }
+    }
+    return { ok: true, value: null }
+  }
+  let method: MacroTargets["method"] = "manual"
+  if (record.method !== undefined && record.method !== null) {
+    if (record.method !== "manual" && record.method !== "calculated") {
+      return { ok: false, error: "Unknown macro method." }
+    }
+    method = record.method
+  }
+  return { ok: true, value: { method, amounts: amounts.value } }
+}
+
+export type PersonPreferencesPatch = {
+  dietaryRestrictions?: string[]
+  allergies?: string[]
+  likes?: string[]
+  dislikes?: string[]
+  notes?: string | null
+}
+
+export function parsePreferencesPatch(
+  value: unknown,
+): ParseResult<PersonPreferencesPatch> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return { ok: false, error: "Preferences must be an object." }
+  }
+  const record = value as {
+    dietaryRestrictions?: unknown
+    allergies?: unknown
+    likes?: unknown
+    dislikes?: unknown
+    notes?: unknown
+  }
+  const patch: PersonPreferencesPatch = {}
+  if (record.dietaryRestrictions !== undefined) {
+    const items = asStringArray(record.dietaryRestrictions)
+    if (!items) {
+      return { ok: false, error: "Preferences must use lists of text." }
+    }
+    patch.dietaryRestrictions = items
+  }
+  if (record.allergies !== undefined) {
+    const items = asStringArray(record.allergies)
+    if (!items) {
+      return { ok: false, error: "Preferences must use lists of text." }
+    }
+    patch.allergies = items
+  }
+  if (record.likes !== undefined) {
+    const items = asStringArray(record.likes)
+    if (!items) {
+      return { ok: false, error: "Preferences must use lists of text." }
+    }
+    patch.likes = items
+  }
+  if (record.dislikes !== undefined) {
+    const items = asStringArray(record.dislikes)
+    if (!items) {
+      return { ok: false, error: "Preferences must use lists of text." }
+    }
+    patch.dislikes = items
+  }
+  if (record.notes !== undefined) {
+    const notes = optionalText(record.notes)
+    if (notes === undefined) {
+      return { ok: false, error: "Preferences must use lists of text." }
+    }
+    patch.notes = notes
+  }
+  return { ok: true, value: patch }
+}
+
+export function mergePreferences(
+  current: PersonPreferences,
+  patch: PersonPreferencesPatch,
+): PersonPreferences {
+  return {
+    schemaVersion: 1,
+    dietaryRestrictions: patch.dietaryRestrictions ?? current.dietaryRestrictions,
+    allergies: patch.allergies ?? current.allergies,
+    likes: patch.likes ?? current.likes,
+    dislikes: patch.dislikes ?? current.dislikes,
+    notes: patch.notes !== undefined ? patch.notes : current.notes,
+  }
+}
+
+export type MacroTargetColumns = {
+  calories: number | null
+  protein_g: number | null
+  carbs_g: number | null
+  fat_g: number | null
+  macro_method: "manual" | "calculated" | null
+}
+
+export function macroTargetsToColumns(
+  targets: MacroTargets | null,
+): MacroTargetColumns {
+  if (!targets) {
+    return {
+      calories: null,
+      protein_g: null,
+      carbs_g: null,
+      fat_g: null,
+      macro_method: null,
+    }
+  }
+  return {
+    calories: targets.amounts.calories,
+    protein_g: targets.amounts.proteinG,
+    carbs_g: targets.amounts.carbsG,
+    fat_g: targets.amounts.fatG,
+    macro_method: targets.method,
+  }
+}
+
+export function preferencesFromUnknown(value: unknown): ParseResult<PersonPreferences> {
   if (value === null || value === undefined) {
     return { ok: true, value: EMPTY_PREFERENCES }
   }

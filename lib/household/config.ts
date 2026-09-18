@@ -174,3 +174,158 @@ export function householdConfigToColumns(config: HouseholdConfig): HouseholdColu
     household_preferences: config.preferences,
   }
 }
+
+export type HouseholdPreferencesPatch = {
+  constraints?: string[]
+  budget?: string | null
+  shoppingCadence?: string | null
+}
+
+export type HouseholdConfigPatch = {
+  name?: string
+  fridgeLocations?: string[]
+  recipeSearchPlaces?: RecipeSearchPlace[]
+  preferences?: HouseholdPreferencesPatch
+}
+
+function parseNameList(value: unknown, error: string): ParseResult<string[]> {
+  if (!Array.isArray(value)) {
+    return { ok: false, error }
+  }
+  const items: string[] = []
+  for (const item of value) {
+    if (typeof item !== "string") {
+      return { ok: false, error }
+    }
+    const trimmed = item.trim()
+    if (trimmed) {
+      items.push(trimmed)
+    }
+  }
+  return { ok: true, value: items }
+}
+
+export function parseFridgeLocationsInput(value: unknown): ParseResult<string[]> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return { ok: false, error: "Fridge locations must be a list of names." }
+  }
+  const record = value as { locations?: unknown }
+  return parseNameList(
+    record.locations,
+    "Fridge locations must be a list of names.",
+  )
+}
+
+function parseHouseholdPreferencesPatch(
+  value: unknown,
+): ParseResult<HouseholdPreferencesPatch> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return { ok: false, error: "Household preferences must be an object." }
+  }
+  const prefs = value as {
+    constraints?: unknown
+    budget?: unknown
+    shoppingCadence?: unknown
+  }
+  const patch: HouseholdPreferencesPatch = {}
+  if (prefs.constraints !== undefined) {
+    const constraints = parseNameList(
+      prefs.constraints,
+      "Constraints must be a list of names.",
+    )
+    if (!constraints.ok) {
+      return constraints
+    }
+    patch.constraints = constraints.value
+  }
+  if (prefs.budget !== undefined) {
+    const budget = optionalText(prefs.budget)
+    if (budget === undefined) {
+      return { ok: false, error: "Budget and shopping cadence must be text." }
+    }
+    patch.budget = budget
+  }
+  if (prefs.shoppingCadence !== undefined) {
+    const shoppingCadence = optionalText(prefs.shoppingCadence)
+    if (shoppingCadence === undefined) {
+      return { ok: false, error: "Budget and shopping cadence must be text." }
+    }
+    patch.shoppingCadence = shoppingCadence
+  }
+  return { ok: true, value: patch }
+}
+
+export function parseHouseholdConfigPatch(
+  value: unknown,
+): ParseResult<HouseholdConfigPatch> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return { ok: false, error: "Household config must be an object." }
+  }
+  const record = value as {
+    name?: unknown
+    fridgeLocations?: unknown
+    recipeSearchPlaces?: unknown
+    preferences?: unknown
+  }
+  const patch: HouseholdConfigPatch = {}
+  if (record.name !== undefined) {
+    if (typeof record.name !== "string" || !record.name.trim()) {
+      return { ok: false, error: "Enter a household name." }
+    }
+    patch.name = record.name.trim()
+  }
+  if (record.fridgeLocations !== undefined) {
+    const fridgeLocations = parseNameList(
+      record.fridgeLocations,
+      "Fridge locations must be a list of names.",
+    )
+    if (!fridgeLocations.ok) {
+      return fridgeLocations
+    }
+    patch.fridgeLocations = fridgeLocations.value
+  }
+  if (record.recipeSearchPlaces !== undefined) {
+    if (!Array.isArray(record.recipeSearchPlaces)) {
+      return { ok: false, error: "Unknown recipe place type." }
+    }
+    const recipeSearchPlaces: RecipeSearchPlace[] = []
+    for (const item of record.recipeSearchPlaces) {
+      const parsed = parseRecipePlace(item)
+      if (!parsed.ok) {
+        return parsed
+      }
+      recipeSearchPlaces.push(parsed.value)
+    }
+    patch.recipeSearchPlaces = recipeSearchPlaces
+  }
+  if (record.preferences !== undefined) {
+    const preferences = parseHouseholdPreferencesPatch(record.preferences)
+    if (!preferences.ok) {
+      return preferences
+    }
+    patch.preferences = preferences.value
+  }
+  return { ok: true, value: patch }
+}
+
+export function mergeHouseholdConfig(
+  current: HouseholdConfig,
+  patch: HouseholdConfigPatch,
+): HouseholdConfig {
+  return {
+    name: patch.name ?? current.name,
+    fridgeLocations: patch.fridgeLocations ?? current.fridgeLocations,
+    recipeSearchPlaces: patch.recipeSearchPlaces ?? current.recipeSearchPlaces,
+    preferences: {
+      constraints: patch.preferences?.constraints ?? current.preferences.constraints,
+      budget:
+        patch.preferences?.budget !== undefined
+          ? patch.preferences.budget
+          : current.preferences.budget,
+      shoppingCadence:
+        patch.preferences?.shoppingCadence !== undefined
+          ? patch.preferences.shoppingCadence
+          : current.preferences.shoppingCadence,
+    },
+  }
+}

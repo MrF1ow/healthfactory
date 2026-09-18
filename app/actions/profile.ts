@@ -3,7 +3,7 @@
 import { redirect } from "next/navigation"
 import { publicSupabaseEnv } from "@/lib/env"
 import { parseProfileInput } from "@/lib/household/parse"
-import { personProfileToColumns } from "@/lib/household/profile"
+import { createHouseholdWrites } from "@/lib/household/writes"
 import { createClient } from "@/lib/supabase/server"
 
 export type ProfileFormState = { error: string | null }
@@ -33,7 +33,7 @@ export async function updateMyProfile(
 
   const { data: personRow, error: personError } = await supabase
     .from("people")
-    .select("id")
+    .select("id, household_id")
     .eq("auth_user_id", sessionUserId)
     .maybeSingle()
 
@@ -45,23 +45,17 @@ export async function updateMyProfile(
   }
 
   const personId = (personRow as { id: unknown }).id
-  if (typeof personId !== "string") {
+  const householdId = (personRow as { household_id: unknown }).household_id
+  if (typeof personId !== "string" || typeof householdId !== "string") {
     return { error: "Could not load the signed-in person." }
   }
 
-  const columns = personProfileToColumns(parsed.value)
-  const { data: updated, error } = await supabase
-    .from("person_profiles")
-    .update(columns)
-    .eq("person_id", personId)
-    .select("person_id")
-    .maybeSingle()
-
-  if (error) {
-    return { error: error.message }
-  }
-  if (!updated) {
-    return { error: "Could not update your profile." }
+  const written = await createHouseholdWrites(supabase, householdId, {
+    kind: "session",
+    personId,
+  }).replaceProfile(personId, parsed.value)
+  if (!written.ok) {
+    return { error: written.error }
   }
 
   redirect("/profile")

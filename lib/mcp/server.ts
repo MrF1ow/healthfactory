@@ -1,5 +1,6 @@
 import {
   createMcpHandler,
+  fromJsonSchema,
   McpServer,
   ProtocolError,
   ProtocolErrorCode,
@@ -7,6 +8,7 @@ import {
   ResourceTemplate,
 } from "@modelcontextprotocol/server"
 import type { HouseholdReads } from "@/lib/household/reads"
+import type { HouseholdWrites, WriteResult } from "@/lib/household/writes"
 import { parseBearer } from "@/lib/mcp/token"
 import { parseMcpUri } from "@/lib/mcp/uris"
 
@@ -44,11 +46,42 @@ function householdIdFromAuth(authInfo: { extra?: Record<string, unknown> } | und
   return householdId
 }
 
+function personIdArg(args: { person_id?: unknown }) {
+  return typeof args.person_id === "string" ? args.person_id : ""
+}
+
+function toolJson(value: unknown) {
+  return {
+    content: [{ type: "text" as const, text: JSON.stringify(value) }],
+    structuredContent: value,
+  }
+}
+
+function toolError(message: string) {
+  return {
+    isError: true as const,
+    content: [{ type: "text" as const, text: message }],
+  }
+}
+
+async function toolResult<T>(result: WriteResult<T>) {
+  if (!result.ok) {
+    return toolError(result.error)
+  }
+  return toolJson(result.value)
+}
+
+const personIdProperty = { type: "string" as const }
+
 export function createHouseholdMcpHandler(
-  readsFor: (householdId: string) => HouseholdReads,
+  bind: (householdId: string) => {
+    reads: HouseholdReads
+    writes: HouseholdWrites
+  },
 ): HouseholdMcpHandler {
   return createMcpHandler(({ authInfo }) => {
-    const reads = readsFor(householdIdFromAuth(authInfo))
+    const householdId = householdIdFromAuth(authInfo)
+    const { reads, writes } = bind(householdId)
     const server = new McpServer({ name: "healthfactory", version: "0.1.0" })
 
     server.registerResource(
@@ -117,6 +150,134 @@ export function createHouseholdMcpHandler(
       new ResourceTemplate("person://{person_id}/log{?since}", { list: undefined }),
       logMeta,
       readLog,
+    )
+
+    server.registerTool(
+      "update_macro_targets",
+      {
+        title: "Update macro targets",
+        description: "Set one household member's calorie and macro targets",
+        inputSchema: fromJsonSchema<{ person_id: string; targets: unknown }>({
+          type: "object",
+          properties: {
+            person_id: personIdProperty,
+            targets: {
+              type: "object",
+              properties: {
+                calories: { type: "number" },
+                proteinG: { type: "number" },
+                carbsG: { type: "number" },
+                fatG: { type: "number" },
+                method: { type: "string" },
+              },
+            },
+          },
+          required: ["person_id", "targets"],
+        }),
+      },
+      async (args) =>
+        toolResult(
+          await writes.updateMacroTargets(personIdArg(args), args.targets),
+        ),
+    )
+
+    server.registerTool(
+      "update_preferences",
+      {
+        title: "Update preferences",
+        description: "Merge one household member's preference lists",
+        inputSchema: fromJsonSchema<{ person_id: string; patch: unknown }>({
+          type: "object",
+          properties: {
+            person_id: personIdProperty,
+            patch: {
+              type: "object",
+              properties: {
+                dietaryRestrictions: { type: "array", items: { type: "string" } },
+                allergies: { type: "array", items: { type: "string" } },
+                likes: { type: "array", items: { type: "string" } },
+                dislikes: { type: "array", items: { type: "string" } },
+                notes: { type: ["string", "null"] },
+              },
+            },
+          },
+          required: ["person_id", "patch"],
+        }),
+      },
+      async (args) =>
+        toolResult(await writes.updatePreferences(personIdArg(args), args.patch)),
+    )
+
+    server.registerTool(
+      "log_meal",
+      {
+        title: "Log meal",
+        description: "Append a bot meal log entry for one household member",
+        inputSchema: fromJsonSchema<{ person_id: string; entry: unknown }>({
+          type: "object",
+          properties: {
+            person_id: personIdProperty,
+            entry: {
+              type: "object",
+              properties: {
+                description: { type: "string" },
+                nutrition: {
+                  type: "object",
+                  properties: {
+                    calories: { type: "number" },
+                    proteinG: { type: "number" },
+                    carbsG: { type: "number" },
+                    fatG: { type: "number" },
+                  },
+                },
+              },
+              required: ["description"],
+            },
+          },
+          required: ["person_id", "entry"],
+        }),
+      },
+      async (args) => toolResult(await writes.logMeal(personIdArg(args), args.entry)),
+    )
+
+    server.registerTool(
+      "update_household_config",
+      {
+        title: "Update household config",
+        description: "Merge household name, recipe places, or shared preferences",
+        inputSchema: fromJsonSchema<{ patch: unknown }>({
+          type: "object",
+          properties: {
+            patch: {
+              type: "object",
+              properties: {
+                name: { type: "string" },
+                fridgeLocations: { type: "array", items: { type: "string" } },
+                recipeSearchPlaces: { type: "array" },
+                preferences: { type: "object" },
+              },
+            },
+          },
+          required: ["patch"],
+        }),
+      },
+      async (args) => toolResult(await writes.updateHouseholdConfig(args.patch)),
+    )
+
+    server.registerTool(
+      "update_fridge_locations",
+      {
+        title: "Update fridge locations",
+        description: "Replace the household fridge and freezer location list",
+        inputSchema: fromJsonSchema<{ locations: unknown }>({
+          type: "object",
+          properties: {
+            locations: { type: "array", items: { type: "string" } },
+          },
+          required: ["locations"],
+        }),
+      },
+      async (args) => toolResult(await writes.updateFridgeLocations(args)),
     )
 
     return server
