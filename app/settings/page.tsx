@@ -2,6 +2,7 @@ import Link from "next/link"
 import { redirect } from "next/navigation"
 import { AddMemberForm } from "@/components/household/add-member-form"
 import { HouseholdSettingsForm } from "@/components/household/household-settings-form"
+import { McpTokenCard } from "@/components/household/mcp-token-card"
 import { LoadErrorPanel } from "@/components/household/status-panels"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { loadHouseholdSettings } from "@/lib/household/load"
@@ -61,6 +62,7 @@ export default async function SettingsPage() {
           </CardContent>
         </Card>
         <AddMemberForm />
+        <McpTokenCard issuedAt={settings.tokenIssuedAt} />
       </div>
     </main>
   )

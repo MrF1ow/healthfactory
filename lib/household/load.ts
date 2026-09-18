@@ -211,6 +211,7 @@ export type HouseholdSettings = {
   person: SignedInPerson
   config: HouseholdConfig
   people: HouseholdMember[]
+  tokenIssuedAt: string | null
 }
 
 export type SettingsLoadResult =
@@ -235,12 +236,31 @@ export async function loadHouseholdSettings(): Promise<SettingsLoadResult> {
       return { ok: false, kind: "error", error: people.error }
     }
 
+    const { data: tokenStatus, error: tokenStatusError } = await session.client.rpc(
+      "household_mcp_token_status",
+    )
+    if (tokenStatusError) {
+      return {
+        ok: false,
+        kind: "error",
+        error: `Could not load MCP token status. ${tokenStatusError.message}`,
+      }
+    }
+    const tokenRow = Array.isArray(tokenStatus) ? tokenStatus[0] : null
+    const tokenIssuedAt =
+      tokenRow &&
+      typeof tokenRow === "object" &&
+      typeof (tokenRow as { issued_at?: unknown }).issued_at === "string"
+        ? (tokenRow as { issued_at: string }).issued_at
+        : null
+
     return {
       ok: true,
       settings: {
         person: signedInPerson(session.person),
         config: config.value,
         people: people.value,
+        tokenIssuedAt,
       },
     }
   } catch (error) {
