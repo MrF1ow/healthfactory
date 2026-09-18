@@ -2,8 +2,8 @@
 
 import { redirect } from "next/navigation"
 import { publicSupabaseEnv } from "@/lib/env"
-import { humanMealToColumns } from "@/lib/household/meal"
 import { parseMealInput } from "@/lib/household/parse"
+import { createHouseholdWrites } from "@/lib/household/writes"
 import { createClient } from "@/lib/supabase/server"
 
 export type MealFormState = { error: string | null }
@@ -33,7 +33,7 @@ export async function logMyMeal(
 
   const { data: personRow, error: personError } = await supabase
     .from("people")
-    .select("id")
+    .select("id, household_id")
     .eq("auth_user_id", sessionUserId)
     .maybeSingle()
 
@@ -45,21 +45,17 @@ export async function logMyMeal(
   }
 
   const personId = (personRow as { id: unknown }).id
-  if (typeof personId !== "string") {
+  const householdId = (personRow as { household_id: unknown }).household_id
+  if (typeof personId !== "string" || typeof householdId !== "string") {
     return { error: "Could not load the signed-in person." }
   }
 
-  const { data: inserted, error } = await supabase
-    .from("meal_logs")
-    .insert(humanMealToColumns(personId, parsed.value))
-    .select("id")
-    .maybeSingle()
-
-  if (error) {
-    return { error: error.message }
-  }
-  if (!inserted) {
-    return { error: "Could not log that meal." }
+  const written = await createHouseholdWrites(supabase, householdId, {
+    kind: "session",
+    personId,
+  }).logMeal(personId, parsed.value.payload)
+  if (!written.ok) {
+    return { error: written.error }
   }
 
   redirect("/")

@@ -29,6 +29,26 @@ const PROFILE_COLUMNS =
   "age, sex, height_cm, weight_kg, activity_level, calories, protein_g, carbs_g, fat_g, macro_method, preferences, bot_config"
 const MEAL_COLUMNS = "id, person_id, logged_at, source, payload"
 
+export async function requireHouseholdPerson(
+  client: SupabaseClient,
+  householdId: string,
+  personId: string,
+): Promise<ReadResult<string>> {
+  const { data, error } = await client
+    .from("people")
+    .select("id")
+    .eq("id", personId)
+    .eq("household_id", householdId)
+    .maybeSingle()
+  if (error) {
+    return { ok: false, error: `Could not load person. ${error.message}` }
+  }
+  if (!data || typeof (data as { id: unknown }).id !== "string") {
+    return { ok: false, error: "Not found." }
+  }
+  return { ok: true, value: (data as { id: string }).id }
+}
+
 function parseMember(row: unknown): HouseholdMember | null {
   if (!row || typeof row !== "object") {
     return null
@@ -59,22 +79,6 @@ export function createHouseholdReads(
   client: SupabaseClient,
   householdId: string,
 ): HouseholdReads {
-  async function requireHouseholdPerson(personId: string): Promise<ReadResult<string>> {
-    const { data, error } = await client
-      .from("people")
-      .select("id")
-      .eq("id", personId)
-      .eq("household_id", householdId)
-      .maybeSingle()
-    if (error) {
-      return { ok: false, error: `Could not load person. ${error.message}` }
-    }
-    if (!data || typeof (data as { id: unknown }).id !== "string") {
-      return { ok: false, error: "Not found." }
-    }
-    return { ok: true, value: (data as { id: string }).id }
-  }
-
   return {
     async config() {
       const { data, error } = await client
@@ -117,7 +121,7 @@ export function createHouseholdReads(
     },
 
     async profile(personId: string) {
-      const person = await requireHouseholdPerson(personId)
+      const person = await requireHouseholdPerson(client, householdId, personId)
       if (!person.ok) {
         return person
       }
@@ -139,7 +143,7 @@ export function createHouseholdReads(
     },
 
     async log(personId, query) {
-      const person = await requireHouseholdPerson(personId)
+      const person = await requireHouseholdPerson(client, householdId, personId)
       if (!person.ok) {
         return person
       }
