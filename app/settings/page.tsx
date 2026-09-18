@@ -30,6 +30,10 @@ export default async function SettingsPage() {
           <Link href="/" className="underline-offset-4 hover:underline">
             Household
           </Link>
+          {" · "}
+          <Link href="/profile" className="underline-offset-4 hover:underline">
+            My profile
+          </Link>
         </p>
         <h1 className="font-heading text-2xl font-medium tracking-tight">
           Settings

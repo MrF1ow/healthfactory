@@ -6,7 +6,7 @@ import {
   LoadErrorPanel,
   UnconfiguredPanel,
 } from "@/components/household/status-panels"
-import { loadDeployScreen } from "@/lib/household/load"
+import { loadDeployScreen, loadRecentMeals } from "@/lib/household/load"
 
 export const dynamic = "force-dynamic"
 
@@ -27,9 +27,17 @@ export default async function Page() {
       case "login":
         body = <SignInForm />
         break
-      case "home":
-        body = <HomePanel person={result.screen.person} />
+      case "home": {
+        const meals = await loadRecentMeals(result.screen.person.id)
+        body = (
+          <HomePanel
+            person={result.screen.person}
+            meals={meals.ok ? meals.meals : []}
+            mealsError={meals.ok ? null : meals.error}
+          />
+        )
         break
+      }
       case "blocked":
         body = <BlockedPanel message={result.screen.message} />
         break
