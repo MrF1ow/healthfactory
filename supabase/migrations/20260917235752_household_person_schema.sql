@@ -29,6 +29,7 @@ create table public.people (
 
 create index people_household_id_idx on public.people (household_id);
 create unique index people_email_key on public.people (email) where email is not null;
+create unique index people_one_owner on public.people (household_id) where role = 'owner';
 
 create table public.person_profiles (
   person_id uuid primary key references public.people (id) on delete cascade,
@@ -272,3 +273,37 @@ create policy person_profiles_update_self
   to authenticated
   using (person_id = (select private.current_person_id()))
   with check (person_id = (select private.current_person_id()));
+
+revoke all on table public.households from anon, authenticated, public;
+revoke all on table public.people from anon, authenticated, public;
+revoke all on table public.person_profiles from anon, authenticated, public;
+
+grant select on table public.households to authenticated;
+grant select on table public.people to authenticated;
+grant select on table public.person_profiles to authenticated;
+
+grant update (
+  name,
+  timezone,
+  fridge_locations,
+  recipe_search_places,
+  household_preferences
+) on table public.households to authenticated;
+
+grant update (name, email) on table public.people to authenticated;
+
+grant update (
+  age,
+  sex,
+  height_cm,
+  weight_kg,
+  activity_level,
+  calories,
+  protein_g,
+  carbs_g,
+  fat_g,
+  macro_method,
+  preferences,
+  bot_config,
+  updated_at
+) on table public.person_profiles to authenticated;

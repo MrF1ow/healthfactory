@@ -26,8 +26,8 @@ The first visit shows household setup. After that, the same route is sign-in.
 ## Schema
 
 - `households`: one row per deploy (unique index on `(true)`). Household config is shared.
-- `people`: one row per human, linked to `auth.users`. Role is `owner` or `member`.
-- `person_profiles`: 1:1 with `people`. RLS allows household members to read profiles and only the owning person to update them.
+- `people`: one row per human, linked to `auth.users`. Role is `owner` or `member`. Partial unique index keeps one owner per household.
+- `person_profiles`: 1:1 with `people`. Household members can read profiles. Only the owning person can update their own profile columns. Identity columns (`household_id`, `auth_user_id`, `role`, `person_id`) have no UPDATE grant.
 
 ## Scripts
 
