@@ -1,4 +1,5 @@
 import { createHash, randomBytes } from "node:crypto"
+import { createAdminClient } from "@/lib/supabase/admin"
 
 const PREFIX = "hf_mcp_"
 
@@ -20,4 +21,15 @@ export function parseBearer(header: string | null): string | null {
   }
   const match = /^Bearer (\S+)$/i.exec(header.trim())
   return match?.[1] ?? null
+}
+
+export async function resolveHouseholdMcpToken(plaintext: string): Promise<string | null> {
+  const admin = createAdminClient()
+  const { data, error } = await admin.rpc("resolve_household_mcp_token", {
+    p_token_hash: mcpTokenHashParam(hashMcpToken(plaintext)),
+  })
+  if (error || typeof data !== "string" || !data) {
+    return null
+  }
+  return data
 }
