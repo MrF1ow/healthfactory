@@ -1,12 +1,19 @@
 import { publicSupabaseEnv } from "@/lib/env"
 import type { HouseholdConfig } from "@/lib/household/config"
-import type { MealLogEntry } from "@/lib/household/meal"
+import { dayBoardFrom, HOME_DAY_LOG_LIMIT, type DayBoard } from "@/lib/household/day-board"
 import type { PersonProfile } from "@/lib/household/profile"
 import {
   createHouseholdReads,
   type HouseholdMember,
 } from "@/lib/household/reads"
-import { deployScreen, type DeployFacts, type DeployScreen, type PersonRole, type SignedInPerson } from "@/lib/household/screen"
+import {
+  deployScreen,
+  type DeployFacts,
+  type DeployScreen,
+  type PersonRole,
+  type SignedInPerson,
+} from "@/lib/household/screen"
+import { utcDayNow } from "@/lib/household/utc-day"
 import { createClient } from "@/lib/supabase/server"
 
 export type { HouseholdMember }
@@ -26,18 +33,25 @@ function householdNameFromJoin(households: unknown): string | null {
   return null
 }
 
-export type LoadResult =
-  | { ok: true; screen: DeployScreen }
+export type GateScreen = Exclude<DeployScreen, { kind: "home" }>
+
+export type RootView =
+  | { chrome: "gate"; screen: GateScreen }
+  | { chrome: "app"; board: DayBoard }
+
+export type RootViewResult =
+  | { ok: true; view: RootView }
   | { ok: false; error: string }
 
-export async function loadDeployScreen(): Promise<LoadResult> {
+export async function loadRootView(): Promise<RootViewResult> {
   if (!publicSupabaseEnv()) {
-    return { ok: true, screen: deployScreen({
-      configured: false,
-      householdExists: false,
-      sessionUserId: null,
-      person: null,
-    }) }
+    return {
+      ok: true,
+      view: {
+        chrome: "gate",
+        screen: { kind: "unconfigured" },
+      },
+    }
   }
 
   try {
@@ -64,10 +78,12 @@ export async function loadDeployScreen(): Promise<LoadResult> {
       person: null,
     }
 
+    let householdId: string | null = null
+
     if (sessionUserId) {
       const { data: row, error } = await supabase
         .from("people")
-        .select("id, name, role, households ( name )")
+        .select("id, name, role, household_id, households ( name )")
         .eq("auth_user_id", sessionUserId)
         .maybeSingle()
 
@@ -83,6 +99,7 @@ export async function loadDeployScreen(): Promise<LoadResult> {
           id: unknown
           name: unknown
           role: unknown
+          household_id: unknown
           households: unknown
         }
         const householdName = householdNameFromJoin(record.households)
@@ -90,6 +107,7 @@ export async function loadDeployScreen(): Promise<LoadResult> {
           typeof record.id === "string" &&
           typeof record.name === "string" &&
           (record.role === "owner" || record.role === "member") &&
+          typeof record.household_id === "string" &&
           typeof householdName === "string"
         ) {
           facts.person = {
@@ -98,11 +116,53 @@ export async function loadDeployScreen(): Promise<LoadResult> {
             role: record.role,
             householdName,
           }
+          householdId = record.household_id
         }
       }
     }
 
-    return { ok: true, screen: deployScreen(facts) }
+    const screen = deployScreen(facts)
+    if (screen.kind !== "home") {
+      return { ok: true, view: { chrome: "gate", screen } }
+    }
+
+    if (!householdId) {
+      return { ok: false, error: "Could not load the signed-in person." }
+    }
+
+    const person = screen.person
+    const reads = createHouseholdReads(supabase, householdId)
+    const day = utcDayNow()
+
+    const [profile, log, config] = await Promise.all([
+      reads.profile(person.id),
+      reads.log(person.id, { since: day.sinceIso, limit: HOME_DAY_LOG_LIMIT }),
+      reads.config(),
+    ])
+
+    if (!profile.ok) {
+      return { ok: false, error: profile.error }
+    }
+    if (!log.ok) {
+      return { ok: false, error: log.error }
+    }
+    if (!config.ok) {
+      return { ok: false, error: config.error }
+    }
+
+    return {
+      ok: true,
+      view: {
+        chrome: "app",
+        board: dayBoardFrom({
+          person,
+          day,
+          profile: profile.value,
+          log: log.value,
+          config: config.value,
+        }),
+      },
+    }
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error"
     return { ok: false, error: `Could not reach Supabase. ${message}` }
@@ -307,34 +367,3 @@ export async function loadMyProfile(): Promise<ProfileLoadResult> {
   }
 }
 
-export type RecentMealsResult =
-  | { ok: true; meals: MealLogEntry[] }
-  | { ok: false; error: string }
-
-export async function loadRecentMeals(personId: string): Promise<RecentMealsResult> {
-  if (!publicSupabaseEnv()) {
-    return { ok: true, meals: [] }
-  }
-
-  try {
-    const session = await loadSessionPerson()
-    if (!session.ok) {
-      if (session.kind === "error") {
-        return { ok: false, error: session.error }
-      }
-      return { ok: true, meals: [] }
-    }
-
-    const log = await createHouseholdReads(
-      session.client,
-      session.person.householdId,
-    ).log(personId, { since: null, limit: 10 })
-    if (!log.ok) {
-      return { ok: false, error: log.error }
-    }
-    return { ok: true, meals: log.value.entries }
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "Unknown error"
-    return { ok: false, error: `Could not reach Supabase. ${message}` }
-  }
-}

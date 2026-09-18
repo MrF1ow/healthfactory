@@ -230,8 +230,8 @@ export function PersonProfileForm({ profile }: { profile: PersonProfile }) {
         <CardHeader>
           <CardTitle>Bot settings</CardTitle>
           <CardDescription>
-            Personal check-in cadence and guidance. Bots are not wired in this
-            step.
+            Check-in cadence is stored on your profile. Nothing in this app
+            sends check-ins yet.
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
