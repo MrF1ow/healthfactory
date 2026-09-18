@@ -37,6 +37,46 @@ describe("householdConfigFromRow", () => {
     })
   })
 
+  it("defaults missing optional preferences to null", () => {
+    expect(
+      householdConfigFromRow({
+        name: "House",
+        fridge_locations: [],
+        recipe_search_places: [],
+        household_preferences: {},
+      }),
+    ).toEqual({
+      ok: true,
+      value: {
+        name: "House",
+        fridgeLocations: [],
+        recipeSearchPlaces: [],
+        preferences: {
+          constraints: [],
+          budget: null,
+          shoppingCadence: null,
+        },
+      },
+    })
+  })
+
+  it("rejects optional preferences with the wrong type", () => {
+    expect(
+      householdConfigFromRow({
+        name: "House",
+        fridge_locations: [],
+        recipe_search_places: [],
+        household_preferences: {
+          budget: 150,
+          shoppingCadence: ["Sundays"],
+        },
+      }),
+    ).toEqual({
+      ok: false,
+      error: "Budget and shopping cadence must be text.",
+    })
+  })
+
   it("rejects an unknown recipe type", () => {
     expect(
       householdConfigFromRow({

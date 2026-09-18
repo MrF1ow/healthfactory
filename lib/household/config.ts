@@ -142,8 +142,11 @@ export function householdConfigFromRow(row: {
   if (!constraints) {
     return { ok: false, error: "Constraints must be a list of names." }
   }
-  const budget = optionalText(prefs.budget)
-  const shoppingCadence = optionalText(prefs.shoppingCadence)
+  const budget = prefs.budget === undefined ? null : optionalText(prefs.budget)
+  const shoppingCadence =
+    prefs.shoppingCadence === undefined
+      ? null
+      : optionalText(prefs.shoppingCadence)
   if (budget === undefined || shoppingCadence === undefined) {
     return { ok: false, error: "Budget and shopping cadence must be text." }
   }
