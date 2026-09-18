@@ -1,12 +1,15 @@
 import { publicSupabaseEnv } from "@/lib/env"
-import { householdConfigFromRow, type HouseholdConfig } from "@/lib/household/config"
-import { mealLogFromRow, type MealLogEntry } from "@/lib/household/meal"
+import type { HouseholdConfig } from "@/lib/household/config"
+import type { MealLogEntry } from "@/lib/household/meal"
+import type { PersonProfile } from "@/lib/household/profile"
 import {
-  personProfileFromRow,
-  type PersonProfile,
-} from "@/lib/household/profile"
+  createHouseholdReads,
+  type HouseholdMember,
+} from "@/lib/household/reads"
 import { deployScreen, type DeployFacts, type DeployScreen, type PersonRole, type SignedInPerson } from "@/lib/household/screen"
 import { createClient } from "@/lib/supabase/server"
+
+export type { HouseholdMember }
 
 function householdNameFromJoin(households: unknown): string | null {
   if (Array.isArray(households)) {
@@ -106,39 +109,35 @@ export async function loadDeployScreen(): Promise<LoadResult> {
   }
 }
 
-export type HouseholdMember = {
+export type SessionPerson = {
   id: string
   name: string
-  email: string | null
   role: PersonRole
+  householdId: string
+  householdName: string
 }
 
-export type HouseholdSettings = {
-  person: SignedInPerson
-  config: HouseholdConfig
-  people: HouseholdMember[]
-}
-
-export type SettingsLoadResult =
-  | { ok: true; settings: HouseholdSettings }
+export type SessionLoadResult =
+  | { ok: true; client: Awaited<ReturnType<typeof createClient>>; person: SessionPerson }
+  | { ok: false; kind: "unconfigured" }
   | { ok: false; kind: "redirect" }
   | { ok: false; kind: "error"; error: string }
 
-export async function loadHouseholdSettings(): Promise<SettingsLoadResult> {
+export async function loadSessionPerson(): Promise<SessionLoadResult> {
   if (!publicSupabaseEnv()) {
-    return { ok: false, kind: "redirect" }
+    return { ok: false, kind: "unconfigured" }
   }
 
   try {
-    const supabase = await createClient()
-    const { data: claimsData } = await supabase.auth.getClaims()
+    const client = await createClient()
+    const { data: claimsData } = await client.auth.getClaims()
     const sessionUserId =
       typeof claimsData?.claims?.sub === "string" ? claimsData.claims.sub : null
     if (!sessionUserId) {
       return { ok: false, kind: "redirect" }
     }
 
-    const { data: personRow, error: personError } = await supabase
+    const { data: personRow, error: personError } = await client
       .from("people")
       .select("id, name, role, household_id, households ( name )")
       .eq("auth_user_id", sessionUserId)
@@ -173,80 +172,95 @@ export async function loadHouseholdSettings(): Promise<SettingsLoadResult> {
       return { ok: false, kind: "redirect" }
     }
 
-    const { data: householdRow, error: householdError } = await supabase
-      .from("households")
-      .select("name, fridge_locations, recipe_search_places, household_preferences")
-      .eq("id", personRecord.household_id)
-      .maybeSingle()
-
-    if (householdError) {
-      return {
-        ok: false,
-        kind: "error",
-        error: `Could not load household settings. ${householdError.message}`,
-      }
+    return {
+      ok: true,
+      client,
+      person: {
+        id: personRecord.id,
+        name: personRecord.name,
+        role: personRecord.role,
+        householdId: personRecord.household_id,
+        householdName,
+      },
     }
-    if (!householdRow) {
-      return {
-        ok: false,
-        kind: "error",
-        error: "Could not load household settings.",
-      }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unknown error"
+    return { ok: false, kind: "error", error: `Could not reach Supabase. ${message}` }
+  }
+}
+
+function signedInPerson(person: SessionPerson): SignedInPerson {
+  return {
+    id: person.id,
+    name: person.name,
+    role: person.role,
+    householdName: person.householdName,
+  }
+}
+
+function asPageFailure(
+  session: Exclude<SessionLoadResult, { ok: true }>,
+): { ok: false; kind: "redirect" } | { ok: false; kind: "error"; error: string } {
+  if (session.kind === "error") {
+    return { ok: false, kind: "error", error: session.error }
+  }
+  return { ok: false, kind: "redirect" }
+}
+
+export type HouseholdSettings = {
+  person: SignedInPerson
+  config: HouseholdConfig
+  people: HouseholdMember[]
+  tokenIssuedAt: string | null
+}
+
+export type SettingsLoadResult =
+  | { ok: true; settings: HouseholdSettings }
+  | { ok: false; kind: "redirect" }
+  | { ok: false; kind: "error"; error: string }
+
+export async function loadHouseholdSettings(): Promise<SettingsLoadResult> {
+  try {
+    const session = await loadSessionPerson()
+    if (!session.ok) {
+      return asPageFailure(session)
     }
 
-    const config = householdConfigFromRow(householdRow)
+    const reads = createHouseholdReads(session.client, session.person.householdId)
+    const config = await reads.config()
     if (!config.ok) {
       return { ok: false, kind: "error", error: config.error }
     }
+    const people = await reads.members()
+    if (!people.ok) {
+      return { ok: false, kind: "error", error: people.error }
+    }
 
-    const { data: peopleRows, error: peopleError } = await supabase
-      .from("people")
-      .select("id, name, email, role")
-      .eq("household_id", personRecord.household_id)
-      .order("created_at")
-
-    if (peopleError) {
+    const { data: tokenStatus, error: tokenStatusError } = await session.client.rpc(
+      "household_mcp_token_status",
+    )
+    if (tokenStatusError) {
       return {
         ok: false,
         kind: "error",
-        error: `Could not load household members. ${peopleError.message}`,
+        error: `Could not load MCP token status. ${tokenStatusError.message}`,
       }
     }
-
-    const people: HouseholdMember[] = []
-    for (const row of peopleRows ?? []) {
-      const record = row as {
-        id: unknown
-        name: unknown
-        email: unknown
-        role: unknown
-      }
-      if (
-        typeof record.id === "string" &&
-        typeof record.name === "string" &&
-        (record.email === null || typeof record.email === "string") &&
-        (record.role === "owner" || record.role === "member")
-      ) {
-        people.push({
-          id: record.id,
-          name: record.name,
-          email: record.email,
-          role: record.role,
-        })
-      }
-    }
+    const tokenRow = Array.isArray(tokenStatus) ? tokenStatus[0] : null
+    const tokenIssuedAt =
+      tokenRow &&
+      typeof tokenRow === "object" &&
+      typeof (tokenRow as { issued_at?: unknown }).issued_at === "string"
+        ? (tokenRow as { issued_at: string }).issued_at
+        : null
 
     return {
       ok: true,
       settings: {
-        person: {
-          id: personRecord.id,
-          name: personRecord.name,
-          role: personRecord.role,
-          householdName,
-        },
+        person: signedInPerson(session.person),
         config: config.value,
-        people,
+        people: people.value,
+        tokenIssuedAt,
       },
     }
   } catch (error) {
@@ -266,76 +280,16 @@ export type ProfileLoadResult =
   | { ok: false; kind: "error"; error: string }
 
 export async function loadMyProfile(): Promise<ProfileLoadResult> {
-  if (!publicSupabaseEnv()) {
-    return { ok: false, kind: "redirect" }
-  }
-
   try {
-    const supabase = await createClient()
-    const { data: claimsData } = await supabase.auth.getClaims()
-    const sessionUserId =
-      typeof claimsData?.claims?.sub === "string" ? claimsData.claims.sub : null
-    if (!sessionUserId) {
-      return { ok: false, kind: "redirect" }
+    const session = await loadSessionPerson()
+    if (!session.ok) {
+      return asPageFailure(session)
     }
 
-    const { data: personRow, error: personError } = await supabase
-      .from("people")
-      .select("id, name, role, households ( name )")
-      .eq("auth_user_id", sessionUserId)
-      .maybeSingle()
-
-    if (personError) {
-      return {
-        ok: false,
-        kind: "error",
-        error: `Could not load the signed-in person. ${personError.message}`,
-      }
-    }
-    if (!personRow) {
-      return { ok: false, kind: "redirect" }
-    }
-
-    const personRecord = personRow as {
-      id: unknown
-      name: unknown
-      role: unknown
-      households: unknown
-    }
-    const householdName = householdNameFromJoin(personRecord.households)
-    if (
-      typeof personRecord.id !== "string" ||
-      typeof personRecord.name !== "string" ||
-      (personRecord.role !== "owner" && personRecord.role !== "member") ||
-      typeof householdName !== "string"
-    ) {
-      return { ok: false, kind: "redirect" }
-    }
-
-    const { data: profileRow, error: profileError } = await supabase
-      .from("person_profiles")
-      .select(
-        "age, sex, height_cm, weight_kg, activity_level, calories, protein_g, carbs_g, fat_g, macro_method, preferences, bot_config",
-      )
-      .eq("person_id", personRecord.id)
-      .maybeSingle()
-
-    if (profileError) {
-      return {
-        ok: false,
-        kind: "error",
-        error: `Could not load your profile. ${profileError.message}`,
-      }
-    }
-    if (!profileRow) {
-      return {
-        ok: false,
-        kind: "error",
-        error: "Could not load your profile.",
-      }
-    }
-
-    const profile = personProfileFromRow(profileRow)
+    const profile = await createHouseholdReads(
+      session.client,
+      session.person.householdId,
+    ).profile(session.person.id)
     if (!profile.ok) {
       return { ok: false, kind: "error", error: profile.error }
     }
@@ -343,12 +297,7 @@ export async function loadMyProfile(): Promise<ProfileLoadResult> {
     return {
       ok: true,
       page: {
-        person: {
-          id: personRecord.id,
-          name: personRecord.name,
-          role: personRecord.role,
-          householdName,
-        },
+        person: signedInPerson(session.person),
         profile: profile.value,
       },
     }
@@ -368,30 +317,22 @@ export async function loadRecentMeals(personId: string): Promise<RecentMealsResu
   }
 
   try {
-    const supabase = await createClient()
-    const { data: rows, error } = await supabase
-      .from("meal_logs")
-      .select("id, person_id, logged_at, source, payload")
-      .eq("person_id", personId)
-      .order("logged_at", { ascending: false })
-      .limit(10)
-
-    if (error) {
-      return {
-        ok: false,
-        error: `Could not load meal log. Apply the repo migrations to your Supabase project. ${error.message}`,
+    const session = await loadSessionPerson()
+    if (!session.ok) {
+      if (session.kind === "error") {
+        return { ok: false, error: session.error }
       }
+      return { ok: true, meals: [] }
     }
 
-    const meals: MealLogEntry[] = []
-    for (const row of rows ?? []) {
-      const parsed = mealLogFromRow(row)
-      if (!parsed.ok) {
-        return { ok: false, error: parsed.error }
-      }
-      meals.push(parsed.value)
+    const log = await createHouseholdReads(
+      session.client,
+      session.person.householdId,
+    ).log(personId, { since: null, limit: 10 })
+    if (!log.ok) {
+      return { ok: false, error: log.error }
     }
-    return { ok: true, meals }
+    return { ok: true, meals: log.value.entries }
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error"
     return { ok: false, error: `Could not reach Supabase. ${message}` }
