@@ -4,6 +4,16 @@ import {
   type RecipeSearchPlace,
 } from "@/lib/household/config"
 import type { LoginIdentifier } from "@/lib/household/login"
+import type { HumanMealDraft } from "@/lib/household/meal"
+import {
+  isActivityLevel,
+  isCheckInCadence,
+  isSex,
+  parseMacroAmountsFromOptionals,
+  parseNonNegativeNumber,
+  parsePositiveNumber,
+  type PersonProfileDraft,
+} from "@/lib/household/profile"
 
 export type BootstrapInput = {
   householdName: string
@@ -194,6 +204,144 @@ function parseRecipeSearchPlaces(raw: string): ParseResult<RecipeSearchPlace[]> 
     })
   }
   return { ok: true, value: places }
+}
+
+export function parseProfileInput(formData: FormData): ParseResult<PersonProfileDraft> {
+  const age = parsePositiveNumber(readString(formData, "age"), "age")
+  if (!age.ok) {
+    return age
+  }
+  if (age.value !== null && !Number.isInteger(age.value)) {
+    return { ok: false, error: "Enter a whole-number age." }
+  }
+
+  const sexRaw = readString(formData, "sex").trim()
+  let sex: PersonProfileDraft["sex"] = null
+  if (sexRaw) {
+    if (!isSex(sexRaw)) {
+      return { ok: false, error: "Unknown sex." }
+    }
+    sex = sexRaw
+  }
+
+  const heightCm = parsePositiveNumber(readString(formData, "heightCm"), "height")
+  if (!heightCm.ok) {
+    return heightCm
+  }
+  const weightKg = parsePositiveNumber(readString(formData, "weightKg"), "weight")
+  if (!weightKg.ok) {
+    return weightKg
+  }
+
+  const activityRaw = readString(formData, "activityLevel").trim()
+  let activityLevel: PersonProfileDraft["activityLevel"] = null
+  if (activityRaw) {
+    if (!isActivityLevel(activityRaw)) {
+      return { ok: false, error: "Unknown activity level." }
+    }
+    activityLevel = activityRaw
+  }
+
+  const calories = parseNonNegativeNumber(readString(formData, "calories"), "calories")
+  if (!calories.ok) {
+    return calories
+  }
+  const proteinG = parseNonNegativeNumber(readString(formData, "proteinG"), "protein")
+  if (!proteinG.ok) {
+    return proteinG
+  }
+  const carbsG = parseNonNegativeNumber(readString(formData, "carbsG"), "carbs")
+  if (!carbsG.ok) {
+    return carbsG
+  }
+  const fatG = parseNonNegativeNumber(readString(formData, "fatG"), "fat")
+  if (!fatG.ok) {
+    return fatG
+  }
+  const amounts = parseMacroAmountsFromOptionals(
+    calories.value,
+    proteinG.value,
+    carbsG.value,
+    fatG.value,
+  )
+  if (!amounts.ok) {
+    return amounts
+  }
+
+  const cadenceRaw = readString(formData, "checkInCadence").trim() || "off"
+  if (!isCheckInCadence(cadenceRaw)) {
+    return { ok: false, error: "Unknown check-in cadence." }
+  }
+
+  return {
+    ok: true,
+    value: {
+      ageYears: age.value,
+      sex,
+      heightCm: heightCm.value,
+      weightKg: weightKg.value,
+      activityLevel,
+      macroTargets: amounts.value ? { method: "manual", amounts: amounts.value } : null,
+      preferences: {
+        schemaVersion: 1,
+        dietaryRestrictions: readLines(formData, "dietaryRestrictions"),
+        allergies: readLines(formData, "allergies"),
+        likes: readLines(formData, "likes"),
+        dislikes: readLines(formData, "dislikes"),
+        notes: optionalText(readString(formData, "notes")),
+      },
+      botConfig: {
+        schemaVersion: 1,
+        checkInCadence: cadenceRaw,
+        guidance: optionalText(readString(formData, "guidance")),
+      },
+    },
+  }
+}
+
+export function parseMealInput(formData: FormData): ParseResult<HumanMealDraft> {
+  const description = readString(formData, "description").trim()
+  if (!description) {
+    return { ok: false, error: "Enter what you ate." }
+  }
+
+  const calories = parseNonNegativeNumber(readString(formData, "calories"), "calories")
+  if (!calories.ok) {
+    return calories
+  }
+  const proteinG = parseNonNegativeNumber(readString(formData, "proteinG"), "protein")
+  if (!proteinG.ok) {
+    return proteinG
+  }
+  const carbsG = parseNonNegativeNumber(readString(formData, "carbsG"), "carbs")
+  if (!carbsG.ok) {
+    return carbsG
+  }
+  const fatG = parseNonNegativeNumber(readString(formData, "fatG"), "fat")
+  if (!fatG.ok) {
+    return fatG
+  }
+  const amounts = parseMacroAmountsFromOptionals(
+    calories.value,
+    proteinG.value,
+    carbsG.value,
+    fatG.value,
+  )
+  if (!amounts.ok) {
+    return amounts
+  }
+
+  return {
+    ok: true,
+    value: {
+      payload: {
+        schemaVersion: 1,
+        kind: "meal",
+        description,
+        nutrition: amounts.value,
+      },
+    },
+  }
 }
 
 export function parseHouseholdConfig(formData: FormData): ParseResult<HouseholdConfig> {
