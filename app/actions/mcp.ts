@@ -2,7 +2,7 @@
 
 import { publicSupabaseEnv } from "@/lib/env"
 import { loadSessionPerson } from "@/lib/household/load"
-import { generateMcpToken, hashMcpToken, mcpTokenHashParam } from "@/lib/mcp/token"
+import { generateMcpToken, hashMcpToken, mcpTokenHashHex } from "@/lib/mcp/token"
 
 export type McpTokenFormState = {
   ok: boolean
@@ -40,7 +40,7 @@ export async function issueHouseholdMcpToken(): Promise<McpTokenFormState> {
 
   const plaintext = generateMcpToken()
   const { data, error } = await session.client.rpc("rotate_household_mcp_token", {
-    p_token_hash: mcpTokenHashParam(hashMcpToken(plaintext)),
+    p_token_hash_hex: mcpTokenHashHex(hashMcpToken(plaintext)),
   })
   if (error) {
     return { ok: false, error: error.message, plaintext: null }

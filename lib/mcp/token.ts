@@ -1,4 +1,5 @@
 import { createHash, randomBytes } from "node:crypto"
+import { publicSupabaseEnv, serviceRoleKey } from "@/lib/env"
 import { createAdminClient } from "@/lib/supabase/admin"
 
 const PREFIX = "hf_mcp_"
@@ -11,8 +12,8 @@ export function hashMcpToken(plaintext: string): Uint8Array {
   return new Uint8Array(createHash("sha256").update(plaintext).digest())
 }
 
-export function mcpTokenHashParam(hash: Uint8Array): string {
-  return `\\x${Buffer.from(hash).toString("hex")}`
+export function mcpTokenHashHex(hash: Uint8Array): string {
+  return Buffer.from(hash).toString("hex")
 }
 
 export function parseBearer(header: string | null): string | null {
@@ -24,9 +25,12 @@ export function parseBearer(header: string | null): string | null {
 }
 
 export async function resolveHouseholdMcpToken(plaintext: string): Promise<string | null> {
+  if (!publicSupabaseEnv() || !serviceRoleKey()) {
+    return null
+  }
   const admin = createAdminClient()
   const { data, error } = await admin.rpc("resolve_household_mcp_token", {
-    p_token_hash: mcpTokenHashParam(hashMcpToken(plaintext)),
+    p_token_hash_hex: mcpTokenHashHex(hashMcpToken(plaintext)),
   })
   if (error || typeof data !== "string" || !data) {
     return null

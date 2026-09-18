@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { generateMcpToken, hashMcpToken, mcpTokenHashParam, parseBearer } from "./token"
+import { generateMcpToken, hashMcpToken, mcpTokenHashHex, parseBearer } from "./token"
 
 const KNOWN_PLAINTEXT = "hf_mcp_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
 const KNOWN_DIGEST = [
@@ -25,10 +25,10 @@ describe("hashMcpToken", () => {
   })
 })
 
-describe("mcpTokenHashParam", () => {
-  it("encodes the digest as a PostgREST bytea hex literal", () => {
-    expect(mcpTokenHashParam(hashMcpToken(KNOWN_PLAINTEXT))).toBe(
-      "\\xbc06587bcfd2f2f72279b3ac0c4b0257073d7b841b03bd002ecc0ce1d112abdd",
+describe("mcpTokenHashHex", () => {
+  it("encodes the digest as lowercase hex", () => {
+    expect(mcpTokenHashHex(hashMcpToken(KNOWN_PLAINTEXT))).toBe(
+      "bc06587bcfd2f2f72279b3ac0c4b0257073d7b841b03bd002ecc0ce1d112abdd",
     )
   })
 })
