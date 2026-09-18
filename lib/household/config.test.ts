@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest"
-import { householdConfigFromRow, householdConfigToColumns } from "./config"
+import {
+  householdConfigFromRow,
+  householdConfigToColumns,
+  mergeHouseholdConfig,
+  parseFridgeLocationsInput,
+  parseHouseholdConfigPatch,
+} from "./config"
 
 describe("householdConfigFromRow", () => {
   it("parses fridge lines, recipe place type, and constraints from the db row", () => {
@@ -115,6 +121,64 @@ describe("householdConfigToColumns", () => {
         budget: "$150/week",
         shoppingCadence: "Sundays",
       },
+    })
+  })
+})
+
+describe("parseHouseholdConfigPatch", () => {
+  it("merges name and budget onto the current config", () => {
+    expect(
+      parseHouseholdConfigPatch({
+        name: "Flow House",
+        preferences: { budget: "$200/week" },
+      }),
+    ).toEqual({
+      ok: true,
+      value: {
+        name: "Flow House",
+        preferences: { budget: "$200/week" },
+      },
+    })
+    expect(
+      mergeHouseholdConfig(
+        {
+          name: "The Flow House",
+          fridgeLocations: ["kitchen fridge"],
+          recipeSearchPlaces: [
+            { name: "H-E-B", type: "grocery", url: "https://www.heb.com" },
+          ],
+          preferences: {
+            constraints: ["no pork"],
+            budget: "$150/week",
+            shoppingCadence: "Sundays",
+          },
+        },
+        { name: "Flow House", preferences: { budget: "$200/week" } },
+      ),
+    ).toEqual({
+      name: "Flow House",
+      fridgeLocations: ["kitchen fridge"],
+      recipeSearchPlaces: [
+        { name: "H-E-B", type: "grocery", url: "https://www.heb.com" },
+      ],
+      preferences: {
+        constraints: ["no pork"],
+        budget: "$200/week",
+        shoppingCadence: "Sundays",
+      },
+    })
+  })
+})
+
+describe("parseFridgeLocationsInput", () => {
+  it("takes a locations list and drops blank names", () => {
+    expect(
+      parseFridgeLocationsInput({
+        locations: ["kitchen fridge", "  garage freezer  ", ""],
+      }),
+    ).toEqual({
+      ok: true,
+      value: ["kitchen fridge", "garage freezer"],
     })
   })
 })
