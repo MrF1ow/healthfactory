@@ -2,8 +2,10 @@ import { describe, expect, it } from "vitest"
 import {
   parseBootstrapInput,
   parseHouseholdConfig,
+  parseMealInput,
   parseMemberInput,
   parseOwnerNames,
+  parseProfileInput,
   parseSignInInput,
 } from "./parse"
 
@@ -227,5 +229,256 @@ describe("parseHouseholdConfig", () => {
       ok: false,
       error: "Unknown recipe place type.",
     })
+  })
+})
+
+describe("parseProfileInput", () => {
+  it("parses empty optional fields into a blank draft", () => {
+    expect(
+      parseProfileInput(
+        form({
+          age: "",
+          sex: "",
+          heightCm: "",
+          weightKg: "",
+          activityLevel: "",
+          calories: "",
+          proteinG: "",
+          carbsG: "",
+          fatG: "",
+          dietaryRestrictions: "",
+          allergies: "",
+          likes: "",
+          dislikes: "",
+          notes: "",
+          checkInCadence: "off",
+          guidance: "",
+        }),
+      ),
+    ).toEqual({
+      ok: true,
+      value: {
+        ageYears: null,
+        sex: null,
+        heightCm: null,
+        weightKg: null,
+        activityLevel: null,
+        macroTargets: null,
+        preferences: {
+          schemaVersion: 1,
+          dietaryRestrictions: [],
+          allergies: [],
+          likes: [],
+          dislikes: [],
+          notes: null,
+        },
+        botConfig: {
+          schemaVersion: 1,
+          checkInCadence: "off",
+          guidance: null,
+        },
+      },
+    })
+  })
+
+  it("parses manual macros and preference lines", () => {
+    expect(
+      parseProfileInput(
+        form({
+          age: " 36 ",
+          sex: "male",
+          heightCm: "180",
+          weightKg: "82.5",
+          activityLevel: "moderate",
+          calories: "2400",
+          proteinG: "180",
+          carbsG: "220",
+          fatG: "70",
+          dietaryRestrictions: "no pork\n",
+          allergies: "shellfish\n",
+          likes: "rice\n",
+          dislikes: "cilantro\n",
+          notes: " weeknight cooking ",
+          checkInCadence: "daily",
+          guidance: " keep dinners simple ",
+        }),
+      ),
+    ).toEqual({
+      ok: true,
+      value: {
+        ageYears: 36,
+        sex: "male",
+        heightCm: 180,
+        weightKg: 82.5,
+        activityLevel: "moderate",
+        macroTargets: {
+          method: "manual",
+          amounts: {
+            calories: 2400,
+            proteinG: 180,
+            carbsG: 220,
+            fatG: 70,
+          },
+        },
+        preferences: {
+          schemaVersion: 1,
+          dietaryRestrictions: ["no pork"],
+          allergies: ["shellfish"],
+          likes: ["rice"],
+          dislikes: ["cilantro"],
+          notes: "weeknight cooking",
+        },
+        botConfig: {
+          schemaVersion: 1,
+          checkInCadence: "daily",
+          guidance: "keep dinners simple",
+        },
+      },
+    })
+  })
+
+  it("rejects a negative calorie target", () => {
+    expect(
+      parseProfileInput(
+        form({
+          age: "",
+          sex: "",
+          heightCm: "",
+          weightKg: "",
+          activityLevel: "",
+          calories: "-1",
+          proteinG: "10",
+          carbsG: "10",
+          fatG: "10",
+          dietaryRestrictions: "",
+          allergies: "",
+          likes: "",
+          dislikes: "",
+          notes: "",
+          checkInCadence: "off",
+          guidance: "",
+        }),
+      ),
+    ).toEqual({ ok: false, error: "Macro targets cannot be negative." })
+  })
+
+  it("rejects calories without the rest of the set", () => {
+    expect(
+      parseProfileInput(
+        form({
+          age: "",
+          sex: "",
+          heightCm: "",
+          weightKg: "",
+          activityLevel: "",
+          calories: "2000",
+          proteinG: "",
+          carbsG: "",
+          fatG: "",
+          dietaryRestrictions: "",
+          allergies: "",
+          likes: "",
+          dislikes: "",
+          notes: "",
+          checkInCadence: "off",
+          guidance: "",
+        }),
+      ),
+    ).toEqual({
+      ok: false,
+      error: "Enter calories, protein, carbs, and fat together.",
+    })
+  })
+
+  it("does not read a person id from the form", () => {
+    const parsed = parseProfileInput(
+      form({
+        person_id: "someone-else",
+        personId: "someone-else",
+        age: "",
+        sex: "",
+        heightCm: "",
+        weightKg: "",
+        activityLevel: "",
+        calories: "",
+        proteinG: "",
+        carbsG: "",
+        fatG: "",
+        dietaryRestrictions: "",
+        allergies: "",
+        likes: "",
+        dislikes: "",
+        notes: "",
+        checkInCadence: "off",
+        guidance: "",
+      }),
+    )
+    expect(parsed.ok).toBe(true)
+    if (parsed.ok) {
+      expect(parsed.value).not.toHaveProperty("personId")
+      expect(parsed.value).not.toHaveProperty("person_id")
+    }
+  })
+})
+
+describe("parseMealInput", () => {
+  it("parses a description-only human meal", () => {
+    expect(parseMealInput(form({ description: "  Oatmeal  " }))).toEqual({
+      ok: true,
+      value: {
+        payload: {
+          schemaVersion: 1,
+          kind: "meal",
+          description: "Oatmeal",
+          nutrition: null,
+        },
+      },
+    })
+  })
+
+  it("parses a complete nutrition set", () => {
+    expect(
+      parseMealInput(
+        form({
+          description: "Chicken and rice",
+          calories: "700",
+          proteinG: "50",
+          carbsG: "60",
+          fatG: "20",
+        }),
+      ),
+    ).toEqual({
+      ok: true,
+      value: {
+        payload: {
+          schemaVersion: 1,
+          kind: "meal",
+          description: "Chicken and rice",
+          nutrition: { calories: 700, proteinG: 50, carbsG: 60, fatG: 20 },
+        },
+      },
+    })
+  })
+
+  it("rejects an empty description", () => {
+    expect(parseMealInput(form({ description: "  " }))).toEqual({
+      ok: false,
+      error: "Enter what you ate.",
+    })
+  })
+
+  it("does not read person id or source from the form", () => {
+    const parsed = parseMealInput(
+      form({
+        description: "Eggs",
+        person_id: "someone-else",
+        source: "bot",
+      }),
+    )
+    expect(parsed.ok).toBe(true)
+    if (parsed.ok) {
+      expect(parsed.value).not.toHaveProperty("personId")
+      expect(parsed.value).not.toHaveProperty("source")
+    }
   })
 })
