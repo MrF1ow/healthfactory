@@ -1,0 +1,80 @@
+import { describe, expect, it } from "vitest"
+import { householdConfigFromRow, householdConfigToColumns } from "./config"
+
+describe("householdConfigFromRow", () => {
+  it("parses fridge lines, recipe place type, and constraints from the db row", () => {
+    expect(
+      householdConfigFromRow({
+        name: "The Flow House",
+        fridge_locations: ["kitchen fridge", "garage freezer"],
+        recipe_search_places: [
+          { name: "H-E-B", type: "grocery", url: "https://www.heb.com" },
+        ],
+        household_preferences: {
+          constraints: ["no pork"],
+          budget: "$150/week",
+          shoppingCadence: "Sundays",
+        },
+      }),
+    ).toEqual({
+      ok: true,
+      value: {
+        name: "The Flow House",
+        fridgeLocations: ["kitchen fridge", "garage freezer"],
+        recipeSearchPlaces: [
+          {
+            name: "H-E-B",
+            type: "grocery",
+            url: "https://www.heb.com",
+          },
+        ],
+        preferences: {
+          constraints: ["no pork"],
+          budget: "$150/week",
+          shoppingCadence: "Sundays",
+        },
+      },
+    })
+  })
+
+  it("rejects an unknown recipe type", () => {
+    expect(
+      householdConfigFromRow({
+        name: "House",
+        fridge_locations: [],
+        recipe_search_places: [{ name: "Mystery", type: "supermarket", url: null }],
+        household_preferences: {},
+      }),
+    ).toEqual({ ok: false, error: "Unknown recipe place type." })
+  })
+})
+
+describe("householdConfigToColumns", () => {
+  it("serializes HouseholdConfig back to household columns", () => {
+    expect(
+      householdConfigToColumns({
+        name: "The Flow House",
+        fridgeLocations: ["kitchen fridge"],
+        recipeSearchPlaces: [
+          { name: "H-E-B", type: "grocery", url: "https://www.heb.com" },
+        ],
+        preferences: {
+          constraints: ["no pork"],
+          budget: "$150/week",
+          shoppingCadence: "Sundays",
+        },
+      }),
+    ).toEqual({
+      name: "The Flow House",
+      fridge_locations: ["kitchen fridge"],
+      recipe_search_places: [
+        { name: "H-E-B", type: "grocery", url: "https://www.heb.com" },
+      ],
+      household_preferences: {
+        constraints: ["no pork"],
+        budget: "$150/week",
+        shoppingCadence: "Sundays",
+      },
+    })
+  })
+})

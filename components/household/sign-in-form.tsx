@@ -33,8 +33,14 @@ export function SignInForm() {
             </Alert>
           ) : null}
           <div className="flex flex-col gap-2">
-            <Label htmlFor="email">Email</Label>
-            <Input id="email" name="email" type="email" required autoComplete="email" />
+            <Label htmlFor="identifier">Email or username</Label>
+            <Input
+              id="identifier"
+              name="identifier"
+              type="text"
+              required
+              autoComplete="username"
+            />
           </div>
           <div className="flex flex-col gap-2">
             <Label htmlFor="password">Password</Label>
