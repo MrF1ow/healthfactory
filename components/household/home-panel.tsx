@@ -1,3 +1,4 @@
+import Link from "next/link"
 import { signOut } from "@/app/actions/auth"
 import { Button } from "@/components/ui/button"
 import {
@@ -21,9 +22,11 @@ export function HomePanel({ person }: { person: SignedInPerson }) {
       <CardContent className="flex flex-col gap-4">
         <p className="text-sm text-muted-foreground">
           Household config is shared. Macros and personal preferences stay on
-          each person&apos;s own profile. Member accounts and profile editing
-          come next.
+          each person&apos;s own profile.
         </p>
+        <Button asChild>
+          <Link href="/settings">Household settings</Link>
+        </Button>
         <form action={signOut}>
           <Button type="submit" variant="outline">
             Sign out

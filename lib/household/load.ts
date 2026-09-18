@@ -1,5 +1,6 @@
 import { publicSupabaseEnv } from "@/lib/env"
-import { deployScreen, type DeployFacts, type DeployScreen } from "@/lib/household/screen"
+import { householdConfigFromRow, type HouseholdConfig } from "@/lib/household/config"
+import { deployScreen, type DeployFacts, type DeployScreen, type PersonRole, type SignedInPerson } from "@/lib/household/screen"
 import { createClient } from "@/lib/supabase/server"
 
 function householdNameFromJoin(households: unknown): string | null {
@@ -97,5 +98,154 @@ export async function loadDeployScreen(): Promise<LoadResult> {
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error"
     return { ok: false, error: `Could not reach Supabase. ${message}` }
+  }
+}
+
+export type HouseholdMember = {
+  id: string
+  name: string
+  email: string | null
+  role: PersonRole
+}
+
+export type HouseholdSettings = {
+  person: SignedInPerson
+  config: HouseholdConfig
+  people: HouseholdMember[]
+}
+
+export type SettingsLoadResult =
+  | { ok: true; settings: HouseholdSettings }
+  | { ok: false; kind: "redirect" }
+  | { ok: false; kind: "error"; error: string }
+
+export async function loadHouseholdSettings(): Promise<SettingsLoadResult> {
+  if (!publicSupabaseEnv()) {
+    return { ok: false, kind: "redirect" }
+  }
+
+  try {
+    const supabase = await createClient()
+    const { data: claimsData } = await supabase.auth.getClaims()
+    const sessionUserId =
+      typeof claimsData?.claims?.sub === "string" ? claimsData.claims.sub : null
+    if (!sessionUserId) {
+      return { ok: false, kind: "redirect" }
+    }
+
+    const { data: personRow, error: personError } = await supabase
+      .from("people")
+      .select("id, name, role, household_id, households ( name )")
+      .eq("auth_user_id", sessionUserId)
+      .maybeSingle()
+
+    if (personError) {
+      return {
+        ok: false,
+        kind: "error",
+        error: `Could not load the signed-in person. ${personError.message}`,
+      }
+    }
+    if (!personRow) {
+      return { ok: false, kind: "redirect" }
+    }
+
+    const personRecord = personRow as {
+      id: unknown
+      name: unknown
+      role: unknown
+      household_id: unknown
+      households: unknown
+    }
+    const householdName = householdNameFromJoin(personRecord.households)
+    if (
+      typeof personRecord.id !== "string" ||
+      typeof personRecord.name !== "string" ||
+      (personRecord.role !== "owner" && personRecord.role !== "member") ||
+      typeof personRecord.household_id !== "string" ||
+      typeof householdName !== "string"
+    ) {
+      return { ok: false, kind: "redirect" }
+    }
+
+    const { data: householdRow, error: householdError } = await supabase
+      .from("households")
+      .select("name, fridge_locations, recipe_search_places, household_preferences")
+      .eq("id", personRecord.household_id)
+      .maybeSingle()
+
+    if (householdError) {
+      return {
+        ok: false,
+        kind: "error",
+        error: `Could not load household settings. ${householdError.message}`,
+      }
+    }
+    if (!householdRow) {
+      return {
+        ok: false,
+        kind: "error",
+        error: "Could not load household settings.",
+      }
+    }
+
+    const config = householdConfigFromRow(householdRow)
+    if (!config.ok) {
+      return { ok: false, kind: "error", error: config.error }
+    }
+
+    const { data: peopleRows, error: peopleError } = await supabase
+      .from("people")
+      .select("id, name, email, role")
+      .eq("household_id", personRecord.household_id)
+      .order("created_at")
+
+    if (peopleError) {
+      return {
+        ok: false,
+        kind: "error",
+        error: `Could not load household members. ${peopleError.message}`,
+      }
+    }
+
+    const people: HouseholdMember[] = []
+    for (const row of peopleRows ?? []) {
+      const record = row as {
+        id: unknown
+        name: unknown
+        email: unknown
+        role: unknown
+      }
+      if (
+        typeof record.id === "string" &&
+        typeof record.name === "string" &&
+        (record.email === null || typeof record.email === "string") &&
+        (record.role === "owner" || record.role === "member")
+      ) {
+        people.push({
+          id: record.id,
+          name: record.name,
+          email: record.email,
+          role: record.role,
+        })
+      }
+    }
+
+    return {
+      ok: true,
+      settings: {
+        person: {
+          id: personRecord.id,
+          name: personRecord.name,
+          role: personRecord.role,
+          householdName,
+        },
+        config: config.value,
+        people,
+      },
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unknown error"
+    return { ok: false, kind: "error", error: `Could not reach Supabase. ${message}` }
   }
 }
