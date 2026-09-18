@@ -75,7 +75,7 @@ describe("deployScreen", () => {
     ).toEqual({
       kind: "blocked",
       message:
-        "This login is not a household member. The owner adds members from household settings in a later release.",
+        "This login is not a household member. A household member can add you from household settings.",
     })
   })
 })

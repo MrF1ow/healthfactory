@@ -2,7 +2,7 @@
 
 Household health config for one family per deploy. Not a multi-tenant SaaS.
 
-This repo is the web app Ethan and his wife log into. First sign-in creates the household and the owner person. Member accounts, profile editing, and MCP come in later PRs.
+This repo is the web app Ethan and his wife log into. First sign-in creates the household and the owner person. After that, any household member can add more members from `/settings`. Member creation sets a password directly. The app does not send an invite email.
 
 ## Stack
 
@@ -19,7 +19,7 @@ Creating a hosted Supabase project from this environment would still require a h
 4. In Auth settings, turn off email confirmations (or confirm the first owner email yourself). Local `supabase/config.toml` already has `enable_confirmations = false`.
 5. Run `npm install` and `npm run dev`.
 
-The first visit shows household setup. After that, the same route is sign-in.
+The first visit shows household setup. After that, the same route is sign-in. Household settings live at `/settings`.
 
 `SUPABASE_SERVICE_ROLE_KEY` is server-only. Never prefix it with `NEXT_PUBLIC_`.
 
@@ -28,6 +28,8 @@ The first visit shows household setup. After that, the same route is sign-in.
 - `households`: one row per deploy (unique index on `(true)`). Household config is shared.
 - `people`: one row per human, linked to `auth.users`. Role is `owner` or `member`. Partial unique index keeps one owner per household.
 - `person_profiles`: 1:1 with `people`. Household members can read profiles. Only the owning person can update their own profile columns. Identity columns (`household_id`, `auth_user_id`, `role`, `person_id`) have no UPDATE grant.
+
+A username-only member has `people.email` null. Auth still uses an email of `username@household.invalid`. Sign-in accepts that username or a real email.
 
 ## Scripts
 

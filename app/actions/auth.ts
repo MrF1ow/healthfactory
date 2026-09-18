@@ -6,6 +6,7 @@ import {
   parseOwnerNames,
   parseSignInInput,
 } from "@/lib/household/parse"
+import { authEmailForLogin } from "@/lib/household/login"
 import { publicSupabaseEnv, serviceRoleKey } from "@/lib/env"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { createClient } from "@/lib/supabase/server"
@@ -111,7 +112,7 @@ export async function signIn(
 
   const supabase = await createClient()
   const session = await supabase.auth.signInWithPassword({
-    email: parsed.value.email,
+    email: authEmailForLogin(parsed.value.login),
     password: parsed.value.password,
   })
 
