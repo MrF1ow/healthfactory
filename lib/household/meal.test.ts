@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest"
-import { humanMealToColumns, mealLogFromRow, mealToColumns } from "./meal"
+import {
+  addMacroAmounts,
+  humanMealToColumns,
+  mealLogFromRow,
+  mealToColumns,
+  sumNutrition,
+  ZERO_MACRO_AMOUNTS,
+} from "./meal"
 
 describe("mealLogFromRow", () => {
   it("parses a human meal with a description only", () => {
@@ -72,6 +79,92 @@ describe("humanMealToColumns", () => {
         nutrition: { calories: 700, proteinG: 50, carbsG: 60, fatG: 20 },
       },
     })
+  })
+})
+
+describe("sumNutrition", () => {
+  it("returns zeros for an empty list", () => {
+    expect(sumNutrition([])).toEqual(ZERO_MACRO_AMOUNTS)
+  })
+
+  it("skips entries with null nutrition", () => {
+    expect(
+      sumNutrition([
+        {
+          id: "m1",
+          personId: "p1",
+          loggedAt: "2026-09-18T00:00:00.000Z",
+          source: "human",
+          payload: {
+            schemaVersion: 1,
+            kind: "meal",
+            description: "Oatmeal",
+            nutrition: null,
+          },
+        },
+        {
+          id: "m2",
+          personId: "p1",
+          loggedAt: "2026-09-18T01:00:00.000Z",
+          source: "human",
+          payload: {
+            schemaVersion: 1,
+            kind: "meal",
+            description: "Chicken",
+            nutrition: { calories: 500, proteinG: 40, carbsG: 30, fatG: 15 },
+          },
+        },
+      ]),
+    ).toEqual({ calories: 500, proteinG: 40, carbsG: 30, fatG: 15 })
+  })
+
+  it("adds human and bot meals with nutrition", () => {
+    const human = {
+      calories: 400,
+      proteinG: 30,
+      carbsG: 40,
+      fatG: 10,
+    }
+    const bot = {
+      calories: 200,
+      proteinG: 10,
+      carbsG: 20,
+      fatG: 5,
+    }
+    expect(addMacroAmounts(human, bot)).toEqual({
+      calories: 600,
+      proteinG: 40,
+      carbsG: 60,
+      fatG: 15,
+    })
+    expect(
+      sumNutrition([
+        {
+          id: "m1",
+          personId: "p1",
+          loggedAt: "2026-09-18T00:00:00.000Z",
+          source: "human",
+          payload: {
+            schemaVersion: 1,
+            kind: "meal",
+            description: "Lunch",
+            nutrition: human,
+          },
+        },
+        {
+          id: "m2",
+          personId: "p1",
+          loggedAt: "2026-09-18T01:00:00.000Z",
+          source: "bot",
+          payload: {
+            schemaVersion: 1,
+            kind: "meal",
+            description: "Snack",
+            nutrition: bot,
+          },
+        },
+      ]),
+    ).toEqual({ calories: 600, proteinG: 40, carbsG: 60, fatG: 15 })
   })
 })
 

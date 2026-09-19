@@ -4,6 +4,24 @@ import {
   type ParseResult,
 } from "./profile"
 
+export type { MacroAmounts }
+
+export const ZERO_MACRO_AMOUNTS: MacroAmounts = {
+  calories: 0,
+  proteinG: 0,
+  carbsG: 0,
+  fatG: 0,
+}
+
+export function addMacroAmounts(a: MacroAmounts, b: MacroAmounts): MacroAmounts {
+  return {
+    calories: a.calories + b.calories,
+    proteinG: a.proteinG + b.proteinG,
+    carbsG: a.carbsG + b.carbsG,
+    fatG: a.fatG + b.fatG,
+  }
+}
+
 export type MealSource = "human" | "bot"
 
 export type MealPayload = {
@@ -23,6 +41,16 @@ export type MealLogEntry = {
   loggedAt: string
   source: MealSource
   payload: MealPayload
+}
+
+export function sumNutrition(entries: readonly MealLogEntry[]): MacroAmounts {
+  let total = ZERO_MACRO_AMOUNTS
+  for (const entry of entries) {
+    if (entry.payload.nutrition) {
+      total = addMacroAmounts(total, entry.payload.nutrition)
+    }
+  }
+  return total
 }
 
 export type MealLogRow = {

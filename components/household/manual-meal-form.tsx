@@ -21,7 +21,7 @@ export function ManualMealForm() {
   const [state, formAction, pending] = useActionState(logMyMeal, initialState)
 
   return (
-    <Card className="w-full max-w-md">
+    <Card className="w-full">
       <CardHeader>
         <CardTitle>Log a meal</CardTitle>
         <CardDescription>

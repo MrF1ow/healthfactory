@@ -1,8 +1,9 @@
-import Link from "next/link"
 import { redirect } from "next/navigation"
 import { AddMemberForm } from "@/components/household/add-member-form"
 import { HouseholdSettingsForm } from "@/components/household/household-settings-form"
 import { McpTokenCard } from "@/components/household/mcp-token-card"
+import { GateFrame } from "@/components/household/gate-frame"
+import { SignedInShell } from "@/components/household/signed-in-shell"
 import { LoadErrorPanel } from "@/components/household/status-panels"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { loadHouseholdSettings } from "@/lib/household/load"
@@ -16,33 +17,16 @@ export default async function SettingsPage() {
       redirect("/")
     }
     return (
-      <main className="flex min-h-full flex-1 flex-col items-center justify-center bg-background px-4 py-16">
+      <GateFrame>
         <LoadErrorPanel message={result.error} />
-      </main>
+      </GateFrame>
     )
   }
 
   const { settings } = result
 
   return (
-    <main className="flex min-h-full flex-1 flex-col items-center bg-background px-4 py-16">
-      <div className="mb-8 w-full max-w-2xl text-left">
-        <p className="text-sm text-muted-foreground">
-          <Link href="/" className="underline-offset-4 hover:underline">
-            Household
-          </Link>
-          {" · "}
-          <Link href="/profile" className="underline-offset-4 hover:underline">
-            My profile
-          </Link>
-        </p>
-        <h1 className="font-heading text-2xl font-medium tracking-tight">
-          Settings
-        </h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Signed in as {settings.person.name} ({settings.person.role}).
-        </p>
-      </div>
+    <SignedInShell current="settings" person={settings.person}>
       <div className="flex w-full max-w-2xl flex-col gap-6">
         <HouseholdSettingsForm config={settings.config} />
         <Card className="w-full">
@@ -64,6 +48,6 @@ export default async function SettingsPage() {
         <AddMemberForm />
         <McpTokenCard issuedAt={settings.tokenIssuedAt} />
       </div>
-    </main>
+    </SignedInShell>
   )
 }

@@ -28,9 +28,9 @@ export function McpTokenCard({ issuedAt }: { issuedAt: string | null }) {
       <CardHeader>
         <CardTitle>MCP service token</CardTitle>
         <CardDescription>
-          Grok bots send this token in the Authorization header to /mcp. It
-          reads household config, person profiles, and meal logs. Replacing a
-          token invalidates the previous one.
+          Grok bots send this token in the Authorization header to /mcp. The
+          token reads and writes through MCP tools. Replacing a token
+          invalidates the previous one.
           {issuedAt ? ` Last issued ${issuedAt}.` : ""}
         </CardDescription>
       </CardHeader>
